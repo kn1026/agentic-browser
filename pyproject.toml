@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentic-browser"
+version = "0.0.1"
+description = "Open-source agentic browser from scratch — observe/plan/act loop"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "khoi_danny" }]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+browser = ["playwright>=1.40"]
+
+[project.scripts]
+agentic-browser = "agentic_browser.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
