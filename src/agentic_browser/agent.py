@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from agentic_browser.browser import Browser
+
 try:
     from agentic_browser.browser import PlaywrightBrowser
 except Exception:  # pragma: no cover
@@ -20,12 +21,18 @@ class AgentResult:
     ok: bool
     final_reason: str
     receipts: list[Receipt] = field(default_factory=list)
+    steps_ok: int = 0
+    steps_failed: int = 0
+    summary: str = ""
 
     def to_dict(self) -> dict:
         return {
             "goal": self.goal,
             "ok": self.ok,
             "final_reason": self.final_reason,
+            "steps_ok": self.steps_ok,
+            "steps_failed": self.steps_failed,
+            "summary": self.summary,
             "receipts": [r.to_dict() for r in self.receipts],
         }
 
@@ -52,13 +59,17 @@ class Agent:
     def run(self, goal: str) -> AgentResult:
         obs: Observation | None = None
         receipts: list[Receipt] = []
+        last_receipt: Receipt | None = None
         final = "no steps"
         ok = False
 
         for i in range(self.max_steps):
-            step = self.planner.next_step(goal, obs, i, self.max_steps)
+            step = self.planner.next_step(
+                goal, obs, i, self.max_steps, last_receipt=last_receipt
+            )
             receipt = self._act(step)
             receipts.append(receipt)
+            last_receipt = receipt
             if receipt.observation is not None:
                 obs = receipt.observation
             if step.kind in ("done", "fail"):
@@ -69,7 +80,22 @@ class Agent:
             final = "exhausted steps"
             ok = False
 
-        result = AgentResult(goal=goal, ok=ok, final_reason=final, receipts=receipts)
+        steps_ok = sum(1 for r in receipts if r.ok)
+        steps_failed = sum(1 for r in receipts if not r.ok)
+        kinds = [r.step.kind for r in receipts]
+        summary = (
+            f"steps={len(receipts)} ok={steps_ok} failed={steps_failed} "
+            f"kinds={kinds} final={final[:160]}"
+        )
+        result = AgentResult(
+            goal=goal,
+            ok=ok,
+            final_reason=final,
+            receipts=receipts,
+            steps_ok=steps_ok,
+            steps_failed=steps_failed,
+            summary=summary,
+        )
         self._write_receipts(result)
         return result
 

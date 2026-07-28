@@ -8,8 +8,8 @@ observe the page → plan the next step → act (click/type/navigate) → leave 
 Built in public by [@khoi_danny](https://x.com/khoi_danny).
 
 ## Status
-**M1 done** — real Playwright Chromium `goto` / `extract_text` on public pages, with interactive target listing and multi-strategy click/type.
-Next: M2 planner quality + richer receipts.
+**M2 in progress** — deterministic planner v1: goal-token match on `obs.interactive`, type/fill branch, `last_receipt` fail-soft (no blind re-click), richer `AgentResult` summary. M1 Playwright path still green.
+Next: harden planner heuristics + receipt UX polish.
 
 ## Install (dev)
 ```bash
