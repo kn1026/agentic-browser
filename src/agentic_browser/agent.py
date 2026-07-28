@@ -6,6 +6,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from agentic_browser.browser import Browser
+try:
+    from agentic_browser.browser import PlaywrightBrowser
+except Exception:  # pragma: no cover
+    PlaywrightBrowser = None  # type: ignore
 from agentic_browser.planner import Planner
 from agentic_browser.types import Observation, Receipt, Step
 
@@ -33,7 +37,13 @@ class Agent:
         max_steps: int = 6,
         receipts_dir: str | Path | None = None,
     ) -> None:
-        self.browser = Browser(dry_run=dry_run)
+        if (not dry_run) and PlaywrightBrowser is not None:
+            try:
+                self.browser = PlaywrightBrowser()
+            except Exception:
+                self.browser = Browser(dry_run=True)
+        else:
+            self.browser = Browser(dry_run=True)
         self.planner = Planner()
         self.max_steps = max_steps
         self.receipts_dir = Path(receipts_dir or "receipts")

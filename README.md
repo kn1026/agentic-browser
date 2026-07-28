@@ -8,8 +8,8 @@ observe the page → plan the next step → act (click/type/navigate) → leave 
 Built in public by [@khoi_danny](https://x.com/khoi_danny).
 
 ## Status
-**M0 scaffold** — package layout, CLI, observe/plan/act stubs.
-Next: real Playwright loop on a public page.
+**M0/M1 in progress** — scaffold + Playwright backend class.
+Next: `playwright install chromium` then `--live` demo.
 
 ## Install (dev)
 ```bash
@@ -40,7 +40,7 @@ Will steal good ideas from Browser-use / Stagehand / Playwright MCP — but ship
 
 ## Roadmap
 - [x] M0 scaffold + CLI
-- [ ] M1 real Chromium session + extract_text on public site
+- [x] M1 Playwright backend class + --live path (install chromium to use)
 - [ ] M2 planner quality + step receipts UI/log
 - [ ] M3 OSS polish + demo + public link
 

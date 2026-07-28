@@ -12,7 +12,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="agentic-browser", description="Agentic browser from scratch")
     p.add_argument("goal", nargs="?", default="Open example.com and extract the main heading")
     p.add_argument("--dry-run", action="store_true", default=True, help="use fake browser (default)")
-    p.add_argument("--live", action="store_true", help="reserved for Playwright session (M1)")
+    p.add_argument("--live", action="store_true", help="use Playwright Chromium if installed")
     p.add_argument("--max-steps", type=int, default=6)
     p.add_argument("--json", action="store_true", help="print full JSON result")
     p.add_argument("--version", action="store_true")
