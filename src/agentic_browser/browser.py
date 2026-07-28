@@ -77,7 +77,7 @@ class Browser:
 
 
 class PlaywrightBrowser:
-    """Optional live Chromium backend (requires: pip install playwright && playwright install chromium)."""
+    """Live Chromium backend via Playwright (pip install playwright && playwright install chromium)."""
 
     def __init__(self) -> None:
         self._pw = None
@@ -95,72 +95,133 @@ class PlaywrightBrowser:
         self._browser = self._pw.chromium.launch(headless=True)
         self._page = self._browser.new_page()
 
-    def goto(self, url: str):
-        from agentic_browser.types import Observation
+    def _list_interactive(self, limit: int = 12) -> list[dict]:
+        """Collect a small set of clickable/typeable targets with stable-ish selectors."""
+        assert self._page is not None
+        script = """
+        (limit) => {
+          const out = [];
+          const push = (el, role) => {
+            if (out.length >= limit) return;
+            const name = (el.innerText || el.getAttribute('aria-label') || el.getAttribute('name') || el.getAttribute('placeholder') || el.id || '').trim().slice(0, 80);
+            let selector = '';
+            if (el.id) selector = '#' + CSS.escape(el.id);
+            else if (el.getAttribute('name')) selector = el.tagName.toLowerCase() + '[name="' + el.getAttribute('name') + '"]';
+            else if (el.getAttribute('href')) selector = 'a[href="' + el.getAttribute('href') + '"]';
+            else selector = el.tagName.toLowerCase();
+            out.push({ role, name: name || role, selector });
+          };
+          document.querySelectorAll('a[href]').forEach(el => push(el, 'link'));
+          document.querySelectorAll('button, [role="button"]').forEach(el => push(el, 'button'));
+          document.querySelectorAll('input, textarea, select').forEach(el => {
+            const t = (el.getAttribute('type') || 'text').toLowerCase();
+            if (['hidden', 'submit', 'button'].includes(t) && el.tagName.toLowerCase() === 'input') return;
+            push(el, el.tagName.toLowerCase() === 'textarea' ? 'textbox' : (t === 'checkbox' || t === 'radio' ? t : 'textbox'));
+          });
+          return out.slice(0, limit);
+        }
+        """
+        try:
+            return list(self._page.evaluate(script, limit) or [])
+        except Exception:
+            return []
 
-        if not url.startswith("http"):
-            url = "https://" + url
-        self._ensure()
-        self._page.goto(url, wait_until="domcontentloaded", timeout=30000)
+    def _obs(self, note: str, text_limit: int = 800) -> Observation:
+        assert self._page is not None
         self.url = self._page.url
         self.title = self._page.title()
-        body = self._page.inner_text("body")[:800]
+        try:
+            body = self._page.inner_text("body")[:text_limit]
+        except Exception:
+            body = ""
+        heading = ""
+        try:
+            h = self._page.locator("h1").first
+            if h.count() > 0:
+                heading = (h.inner_text(timeout=2000) or "").strip()
+        except Exception:
+            heading = ""
+        preview = f"{heading}. {body}".strip() if heading and heading not in body[:120] else body
         return Observation(
             url=self.url,
             title=self.title,
-            text_preview=body,
-            interactive=[],
-            note="playwright",
+            text_preview=preview[:text_limit],
+            interactive=self._list_interactive(),
+            note=note,
         )
 
-    def extract_text(self):
-        from agentic_browser.types import Observation
-
+    def goto(self, url: str) -> Observation:
+        if not url.startswith("http"):
+            url = "https://" + url
         self._ensure()
-        body = self._page.inner_text("body")[:1200]
-        return Observation(
-            url=self._page.url,
-            title=self._page.title(),
-            text_preview=body,
-            interactive=[],
-            note="playwright-extract",
-        )
+        assert self._page is not None
+        self._page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        return self._obs("playwright")
 
-    def click(self, target: str):
-        from agentic_browser.types import Observation
-
+    def extract_text(self) -> Observation:
         self._ensure()
-        # try text selector then css
-        try:
-            self._page.get_by_text(target, exact=False).first.click(timeout=5000)
-        except Exception:
-            self._page.click(target, timeout=5000)
-        return Observation(
-            url=self._page.url,
-            title=self._page.title(),
-            text_preview=self._page.inner_text("body")[:400],
-            interactive=[],
-            note=f"pw-click:{target}",
-        )
+        return self._obs("playwright-extract", text_limit=1200)
 
-    def type_text(self, target: str, value: str):
-        from agentic_browser.types import Observation
-
+    def click(self, target: str) -> Observation:
         self._ensure()
-        try:
-            self._page.get_by_label(target, exact=False).fill(value, timeout=5000)
-        except Exception:
-            self._page.fill(target, value, timeout=5000)
-        return Observation(
-            url=self._page.url,
-            title=self._page.title(),
-            text_preview=f"typed into {target}",
-            interactive=[],
-            note=f"pw-type:{target}",
+        assert self._page is not None
+        t = (target or "").strip()
+        last_err: Exception | None = None
+        strategies = []
+        if t.startswith("#") or t.startswith(".") or "[" in t or t.startswith("text="):
+            strategies.append(("css_or_text", t))
+        strategies.extend(
+            [
+                ("get_by_role_link", t),
+                ("get_by_role_button", t),
+                ("get_by_text", t),
+                ("css", t),
+            ]
         )
+        for kind, val in strategies:
+            try:
+                if kind == "get_by_role_link":
+                    self._page.get_by_role("link", name=val, exact=False).first.click(timeout=4000)
+                elif kind == "get_by_role_button":
+                    self._page.get_by_role("button", name=val, exact=False).first.click(timeout=4000)
+                elif kind == "get_by_text":
+                    self._page.get_by_text(val, exact=False).first.click(timeout=4000)
+                else:
+                    self._page.click(val, timeout=4000)
+                return self._obs(f"pw-click:{t}", text_limit=400)
+            except Exception as e:
+                last_err = e
+                continue
+        raise RuntimeError(f"click failed for {t!r}: {last_err}")
+
+    def type_text(self, target: str, value: str) -> Observation:
+        self._ensure()
+        assert self._page is not None
+        t = (target or "").strip()
+        last_err: Exception | None = None
+        for attempt in (
+            lambda: self._page.get_by_label(t, exact=False).fill(value, timeout=4000),
+            lambda: self._page.get_by_placeholder(t, exact=False).fill(value, timeout=4000),
+            lambda: self._page.locator(t).fill(value, timeout=4000),
+            lambda: self._page.fill(t, value, timeout=4000),
+        ):
+            try:
+                attempt()
+                return Observation(
+                    url=self._page.url,
+                    title=self._page.title(),
+                    text_preview=f"typed into {t}",
+                    interactive=self._list_interactive(),
+                    note=f"pw-type:{t}",
+                )
+            except Exception as e:
+                last_err = e
+                continue
+        raise RuntimeError(f"type failed for {t!r}: {last_err}")
 
     def screenshot(self, path: str = "shot.png") -> str:
         self._ensure()
+        assert self._page is not None
         self._page.screenshot(path=path, full_page=True)
         return path
 
@@ -172,4 +233,6 @@ class PlaywrightBrowser:
                 self._pw.stop()
         except Exception:
             pass
-
+        self._page = None
+        self._browser = None
+        self._pw = None
