@@ -39,8 +39,13 @@ jobs:
             echo "::error::Blocked path looks like secrets"
             exit 1
           fi
-          # Diff content heuristics (not perfect — agent review is required too)
-          DIFF=$(git diff "$BASE" "$HEAD" || true)
+          # Diff content heuristics (not perfect — agent review is required too).
+          # Exclude workflow scanner files themselves so pattern lists don't self-match
+          # (false green-kill on e004d07: pr-guard.yml matched curl|bash /dev/tcp etc.).
+          DIFF=$(git diff "$BASE" "$HEAD" -- . \
+            ':(exclude).github/workflows/pr-guard.yml' \
+            ':(exclude).github/workflows/ci-fail-notify.yml' \
+            || true)
           PATTERNS=(
             'BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY'
             'AKIA[0-9A-Z]{16}'

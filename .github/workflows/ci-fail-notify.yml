@@ -1,0 +1,90 @@
+name: ci-fail-notify
+
+# Fires only when a workflow run on this repo concludes with failure.
+# Leaves a clear issue so Zinley lab / owner can fix. No secrets printed.
+
+on:
+  workflow_run:
+    workflows: ["pr-guard"]
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+jobs:
+  notify-on-failure:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open or refresh CI failure issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const run = context.payload.workflow_run;
+            const title = `CI FAIL: ${run.name} on ${run.head_branch} (${run.head_sha.slice(0, 7)})`;
+            const body = [
+              '## CI failed',
+              '',
+              `- **Workflow:** ${run.name}`,
+              `- **Branch:** \`${run.head_branch}\``,
+              `- **SHA:** \`${run.head_sha}\``,
+              `- **Event:** ${run.event}`,
+              `- **Run:** ${run.html_url}`,
+              `- **Actor:** @${run.actor?.login || 'unknown'}`,
+              '',
+              '### For Zinley lab agent',
+              '1. Open the run URL and read the failed step log.',
+              '2. Fix the smallest real cause (tests / smell scan / install).',
+              '3. Commit/push, confirm a green `pr-guard` run.',
+              '4. Close this issue when green.',
+              '',
+              '_Auto-opened by `ci-fail-notify` — use at your own risk; repo is Zinley-agent controlled._',
+            ].join('\n');
+
+            const label = 'ci-failure';
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: label,
+              });
+            } catch (e) {
+              if (e.status === 404) {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: label,
+                  color: 'b60205',
+                  description: 'GitHub Actions failure needing fix',
+                });
+              } else {
+                throw e;
+              }
+            }
+
+            const q = `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open label:${label} in:title "CI FAIL:"`;
+            const found = await github.rest.search.issuesAndPullRequests({ q, per_page: 5 });
+            const existing = (found.data.items || []).find((i) =>
+              i.title.includes(run.head_sha.slice(0, 7)) || i.title.includes(run.name)
+            );
+
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body: `Another failure:\n\n${body}`,
+              });
+              core.info(`Commented on existing issue #${existing.number}`);
+            } else {
+              const issue = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: [label],
+              });
+              core.info(`Opened issue #${issue.data.number}`);
+            }
