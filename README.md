@@ -8,8 +8,8 @@ observe the page → plan the next step → act (click/type/navigate) → leave 
 Built in public by [@khoi_danny](https://x.com/khoi_danny).
 
 ## Status
-**M2 in progress** — deterministic planner v1: goal-token match on `obs.interactive`, type/fill branch, `last_receipt` fail-soft (no blind re-click), richer `AgentResult` summary. M1 Playwright path still green.
-Next: harden planner heuristics + receipt UX polish.
+**M2 in progress** — planner v1 + compound phase: goal-token match on `obs.interactive`, type/fill, fail-soft receipts, click/type→extract phase-advance for multi-intent goals. Single-intent click still ends after success. M1 Playwright path still green.
+Next: noisier interactive matching + optional `run_build` M2 branch (no false-green).
 
 ## Install (dev)
 ```bash

@@ -136,3 +136,74 @@ def test_dry_run_named_click_loop():
     click_steps = [r.step for r in result.receipts if r.step.kind == "click"]
     assert click_steps
     assert "more information" in click_steps[0].target.lower()
+    # single-intent: no forced extract after successful click
+    assert "extract_text" not in kinds
+    assert result.ok
+
+
+def test_compound_click_then_extract_loop():
+    agent = Agent(dry_run=True, max_steps=8, receipts_dir="/tmp/agentic-browser-m2-receipts")
+    result = agent.run("click More information then extract heading on example.com")
+    agent.close()
+    kinds = [r.step.kind for r in result.receipts]
+    assert "goto" in kinds
+    assert "click" in kinds
+    assert "extract_text" in kinds
+    assert kinds.index("click") < kinds.index("extract_text")
+    assert result.ok
+    click_steps = [r.step for r in result.receipts if r.step.kind == "click"]
+    assert click_steps and "more information" in click_steps[0].target.lower()
+
+
+def test_compound_phase_after_click_receipt():
+    p = Planner()
+    obs = Observation(
+        url="https://example.com",
+        title="Example Domain",
+        text_preview="(stub click on More information...)",
+        interactive=[],
+        note="clicked:More information...",
+    )
+    ok_click = Receipt(
+        step=Step(kind="click", target="More information...", reason="match"),
+        ok=True,
+        detail="clicked",
+        observation=obs,
+    )
+    nxt = p.next_step(
+        "click More information then extract heading on example.com",
+        obs,
+        step_i=2,
+        max_steps=8,
+        last_receipt=ok_click,
+    )
+    assert nxt.kind == "extract_text"
+    assert "post-click" in (nxt.reason or "").lower() or "extract" in (
+        nxt.reason or ""
+    ).lower()
+
+
+def test_single_click_still_done_without_extract():
+    p = Planner()
+    obs = Observation(
+        url="https://example.com",
+        title="Example Domain",
+        text_preview="(stub click on More information...)",
+        interactive=[],
+        note="clicked:More information...",
+    )
+    ok_click = Receipt(
+        step=Step(kind="click", target="More information...", reason="match"),
+        ok=True,
+        detail="clicked",
+        observation=obs,
+    )
+    nxt = p.next_step(
+        "click More information on example.com",
+        obs,
+        step_i=2,
+        max_steps=6,
+        last_receipt=ok_click,
+    )
+    assert nxt.kind == "done"
+    assert "click" in (nxt.reason or "").lower()

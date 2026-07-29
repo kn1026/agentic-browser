@@ -49,7 +49,7 @@ class Planner:
 
     Scores obs.interactive against goal tokens, prefers act over bare extract
     when click/type verbs are present, consumes last_receipt for fail-soft,
-    and emits type steps when asked.
+    emits type steps when asked, and phase-advances compound click/type→extract.
     """
 
     MATCH_THRESHOLD = 0.15
@@ -77,26 +77,51 @@ class Planner:
         wants_click = bool(re.search(r"\b(click|tap|press)\b", g))
         wants_type = bool(re.search(r"\b(type|fill|enter|input|write)\b", g))
         wants_extract = bool(
-            re.search(r"\b(extract|heading|title|read|scrape|summarize)\b", g)
+            re.search(
+                r"\b(extract|heading|title|read|scrape|summarize|content)\b",
+                g,
+            )
+            or re.search(r"\bpage text\b", g)
             or ("find" in g and not wants_click and not wants_type)
         )
-        # "find and click X" is an act goal, not extract.
-        if "find" in g and wants_click:
+        # "find and click X" is an act goal, not extract — unless extract verbs also appear.
+        if "find" in g and wants_click and not re.search(
+            r"\b(extract|heading|title|read|scrape|summarize|content)\b", g
+        ):
             wants_extract = False
 
-        # After a successful act step that satisfied click/type intent, finish.
+        # Phase machine (tiny): navigate → act → extract → done.
+        # Consume successful receipts so compound goals don't finish early,
+        # and post-click stub text is never treated as a completed extract.
         if last_receipt is not None and last_receipt.ok:
             lk = last_receipt.step.kind
-            if wants_click and lk == "click" and not wants_extract:
+            if lk == "extract_text":
+                preview = (obs.text_preview or "")[:120]
+                return Step(
+                    kind="done",
+                    reason=f"extracted from {obs.url}: {preview}",
+                )
+            if lk == "click" and wants_click:
+                if wants_extract:
+                    return Step(
+                        kind="extract_text",
+                        reason="phase: post-click extract",
+                    )
                 return Step(
                     kind="done",
                     reason=f"clicked {last_receipt.step.target!r} ok",
                 )
-            if wants_type and lk == "type" and not wants_extract and not wants_click:
-                return Step(
-                    kind="done",
-                    reason=f"typed into {last_receipt.step.target!r} ok",
-                )
+            if lk == "type" and wants_type:
+                if wants_extract:
+                    return Step(
+                        kind="extract_text",
+                        reason="phase: post-type extract",
+                    )
+                if not wants_click:
+                    return Step(
+                        kind="done",
+                        reason=f"typed into {last_receipt.step.target!r} ok",
+                    )
 
         if wants_type:
             typed = self._plan_type(goal, obs)
@@ -108,7 +133,7 @@ class Planner:
             if clicked is not None:
                 return clicked
             if wants_extract:
-                return self._plan_extract(obs, step_i)
+                return self._plan_extract(obs, last_receipt)
             # If we already clicked successfully earlier in-loop, done was handled above.
             return Step(
                 kind="fail",
@@ -116,7 +141,7 @@ class Planner:
             )
 
         if wants_extract or "find" in g:
-            return self._plan_extract(obs, step_i)
+            return self._plan_extract(obs, last_receipt)
 
         if step_i == 0:
             return Step(kind="goto", target=self._guess_url(goal), reason="start at likely URL")
@@ -164,17 +189,23 @@ class Planner:
             reason=f"step {failed.kind} failed: {last_receipt.detail}",
         )
 
-    def _plan_extract(self, obs: Observation, step_i: int) -> Step:
-        # step_i==0 is usually goto; first on-page extract at step_i>=1
-        if step_i <= 1 and not (obs.text_preview and len(obs.text_preview) > 20):
-            return Step(kind="extract_text", reason="goal asks for page content")
-        if step_i == 1:
-            return Step(kind="extract_text", reason="goal asks for page content")
-        # After an extract_text receipt, obs usually has text — finish.
-        if obs.note.startswith("extract") or (obs.text_preview and step_i >= 2):
+    def _plan_extract(
+        self, obs: Observation, last_receipt: Receipt | None = None
+    ) -> Step:
+        # Only treat a real extract receipt/note as completion — never post-click
+        # stub text_preview (that false-greened compound goals).
+        if last_receipt is not None and last_receipt.ok and last_receipt.step.kind == "extract_text":
+            preview = (obs.text_preview or "")[:120]
             return Step(
                 kind="done",
-                reason=f"extracted from {obs.url}: {obs.text_preview[:120]}",
+                reason=f"extracted from {obs.url}: {preview}",
+            )
+        note = (obs.note or "").lower()
+        if note.startswith("extract") or note.startswith("playwright-extract"):
+            preview = (obs.text_preview or "")[:120]
+            return Step(
+                kind="done",
+                reason=f"extracted from {obs.url}: {preview}",
             )
         return Step(kind="extract_text", reason="goal asks for page content")
 
