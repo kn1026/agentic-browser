@@ -52,7 +52,70 @@ class Planner:
     emits type steps when asked, and phase-advances compound click/type→extract.
     """
 
-    MATCH_THRESHOLD = 0.15
+    # Harden (H-M2-match-harden-v1): require real name-token overlap; role-only
+    # and bare "click" no longer clear the bar.
+    MATCH_THRESHOLD = 0.55
+    _ACTIONISH = {
+        "click",
+        "tap",
+        "press",
+        "type",
+        "fill",
+        "enter",
+        "input",
+        "write",
+        "find",
+        "search",
+        "example",
+        "domain",
+        "page",
+        "site",
+        "website",
+        "missing",
+        "exist",
+        "exists",
+        "does",
+        "not",
+        "none",
+        "nothing",
+        "dont",
+        "don't",
+        "cannot",
+        "cant",
+        "want",
+        "need",
+        "should",
+        "would",
+        "could",
+        "just",
+        "only",
+        "also",
+        "then",
+        "after",
+        "before",
+        "open",
+        "use",
+    }
+    _ROLE_WORDS = {
+        "button",
+        "link",
+        "tab",
+        "menu",
+        "icon",
+        "checkbox",
+        "radio",
+        "option",
+        "item",
+        "control",
+        "element",
+        "field",
+        "textbox",
+        "searchbox",
+        "input",
+        "textarea",
+        "combobox",
+        "label",
+    }
 
     def next_step(
         self,
@@ -315,25 +378,16 @@ class Planner:
     ) -> dict[str, Any] | None:
         exclude_names = exclude_names or set()
         tokens = self._goal_tokens(goal)
-        # Drop pure-action tokens so "click More information" focuses on name parts.
-        actionish = {
-            "click",
-            "tap",
-            "press",
-            "type",
-            "fill",
-            "enter",
-            "input",
-            "write",
-            "find",
-            "search",
-            "button",
-            "link",
-            "example",
-        }
-        focus = tokens - actionish
+        # Content tokens only: drop verbs + role nouns so "click button" / bare
+        # "click the" cannot invent a target from role alone.
+        focus = tokens - self._ACTIONISH - self._ROLE_WORDS
         if not focus:
-            focus = tokens
+            if allow_weak:
+                # Type path may still fall back to first textbox; ranking uses
+                # leftover tokens if any.
+                focus = tokens - self._ACTIONISH
+            else:
+                return None
 
         best: dict[str, Any] | None = None
         best_score = -1.0
@@ -344,19 +398,27 @@ class Planner:
             key = name.lower()
             if key in exclude_names or (sel and sel.lower() in exclude_names):
                 continue
-            hay = f"{name} {sel} {role}".lower()
-            hay_tokens = set(re.findall(r"[a-z0-9]{2,}", hay))
-            if not hay_tokens and not name:
+            # Score against name + selector tokens only — role is a bonus, not a match.
+            name_hay = f"{name} {sel}".lower()
+            name_tokens = set(re.findall(r"[a-z0-9]{2,}", name_hay))
+            if not name_tokens and not name:
                 continue
-            overlap = focus & hay_tokens
-            # partial substring boost (e.g. goal "more" vs name "More information")
+            overlap = focus & name_tokens
+            # Substring is ranking-only and only for longer tokens; never enough
+            # alone to pass the threshold (drops ultra-weak substring-only hits).
             sub = 0.0
             for t in focus:
-                if t in hay:
-                    sub += 1.0
+                if t in name_tokens:
+                    continue
+                if len(t) >= 4 and t in name_hay:
+                    sub += 0.25
+            if not overlap and not allow_weak:
+                # Hard refuse: no full content-token overlap on name/selector.
+                continue
             score = (2.0 * len(overlap) + sub) / max(len(focus), 1)
-            if prefer_roles and role in prefer_roles:
-                score += 0.05
+            # Prefer role+token overlap (not role alone).
+            if prefer_roles and role in prefer_roles and overlap:
+                score += 0.15
             # Prefer longer name when scores tie (more specific label).
             score += min(len(name), 40) / 1000.0
             if score > best_score:
@@ -366,13 +428,9 @@ class Planner:
 
         if best is None:
             return None
-        if best_score < self.MATCH_THRESHOLD and not allow_weak:
-            # If goal names nothing usable but only one interactive exists and
-            # goal is a bare "click" without a named target, still refuse.
-            return None
-        if best_score < self.MATCH_THRESHOLD and allow_weak:
-            return best
         if best_score < self.MATCH_THRESHOLD:
+            if allow_weak and best_score >= 0.0:
+                return best
             return None
         return best
 

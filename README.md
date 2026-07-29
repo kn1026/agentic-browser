@@ -35,11 +35,11 @@ observe → plan → act (click/type/navigate) → receipts — then **adapt the
 
 ## Status
 
-**M2 foundation in progress** (planner v1 + compound phase). Next product arc: **adaptive viewer UI** on top of the loop (live task surface, progressive disclosure, human-focus chrome), not more "browser automation for automation's sake."
+**M2 foundation mostly landed** (planner v1 + compound phase + match harden). Next product arc: **adaptive viewer UI** on top of the loop (live task surface, progressive disclosure, human-focus chrome), not more "browser automation for automation's sake."
 
 - M1 Playwright path green
-- M2: goal-token match, type/fill, fail-soft receipts, click/type→extract phase-advance
-- Next: match harden → adaptive UI viewer (transform layout/controls to task + human)
+- M2: goal-token match, type/fill, fail-soft receipts, click/type→extract phase-advance, stricter name-token match (no role-only / bare click invent)
+- Next: **adaptive UI viewer** (transform layout/controls to task + human)
 
 ## Install (dev)
 
@@ -82,7 +82,7 @@ Those are great. This lab is building a different bet: **human-facing adaptive U
 
 - [x] M0 scaffold + CLI
 - [x] M1 Playwright Chromium + `--live`
-- [ ] M2 planner quality + receipts (in progress)
+- [x] M2 planner quality + receipts (match harden done; keep green)
 - [ ] **M2.5 / M3 direction: adaptive agentic UI** — UI transforms to viewer/task; fast human-focus surface; demo that feels new, not "browser-use with a different README"
 - [ ] M3 OSS polish + shareable adaptive demo
 

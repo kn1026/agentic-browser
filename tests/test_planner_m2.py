@@ -207,3 +207,68 @@ def test_single_click_still_done_without_extract():
     )
     assert nxt.kind == "done"
     assert "click" in (nxt.reason or "").lower()
+
+
+def test_missing_named_target_fails_soft():
+    """H-M2-match-harden: do not invent success when no name tokens match."""
+    p = Planner()
+    obs = _example_obs(
+        [
+            {"role": "link", "name": "Learn more", "selector": "a.learn"},
+            {"role": "button", "name": "Subscribe", "selector": "button.subscribe"},
+        ]
+    )
+    step = p.next_step(
+        "click the missing button that does not exist on example.com",
+        obs,
+        step_i=1,
+        max_steps=6,
+    )
+    assert step.kind == "fail"
+    assert "no interactive" in (step.reason or "").lower() or "match" in (
+        step.reason or ""
+    ).lower()
+
+
+def test_role_only_and_bare_click_refuse():
+    """Role words / empty name tokens must not pick a random control."""
+    p = Planner()
+    obs = _example_obs(
+        [
+            {"role": "link", "name": "Learn more", "selector": "a.learn"},
+            {"role": "button", "name": "Subscribe", "selector": "button.subscribe"},
+        ]
+    )
+    for goal in (
+        "click button on example.com",
+        "click link on example.com",
+        "click the on example.com",
+        "click submit on example.com",
+    ):
+        step = p.next_step(goal, obs, step_i=1, max_steps=6)
+        assert step.kind == "fail", f"{goal!r} -> {step.kind} {step.target!r}"
+
+
+def test_weak_substring_alone_does_not_win():
+    """Substring-only 'more' must not beat a no-overlap refuse vs unrelated labels
+    when a better full-token match is absent; named Learn more still wins on full tokens.
+    """
+    p = Planner()
+    obs = _example_obs(
+        [
+            {"role": "button", "name": "Subscribe", "selector": "button.subscribe"},
+            {"role": "link", "name": "Learn more", "selector": "a.learn"},
+        ]
+    )
+    # Full name tokens still match.
+    ok = p.next_step("click Learn more on example.com", obs, step_i=1, max_steps=6)
+    assert ok.kind == "click"
+    assert "learn more" in ok.target.lower()
+    # Ultra-short single token alone is weak; still ok if full token 'more' overlaps
+    # name_tokens of Learn more / More information — require at least one full token.
+    weak = p.next_step("click more on example.com", obs, step_i=1, max_steps=6)
+    assert weak.kind == "click"
+    assert "more" in weak.target.lower()
+    # Unrelated name: no content overlap → fail
+    miss = p.next_step("click checkout on example.com", obs, step_i=1, max_steps=6)
+    assert miss.kind == "fail"
