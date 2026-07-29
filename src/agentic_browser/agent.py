@@ -25,6 +25,9 @@ class AgentResult:
     steps_failed: int = 0
     summary: str = ""
     viewer_path: str = ""
+    viewer_frame_writes: int = 0
+    viewer_phases_seen: list[str] = field(default_factory=list)
+    viewer_densities_seen: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         d = {
@@ -38,6 +41,10 @@ class AgentResult:
         }
         if self.viewer_path:
             d["viewer_path"] = self.viewer_path
+        if self.viewer_frame_writes:
+            d["viewer_frame_writes"] = self.viewer_frame_writes
+            d["viewer_phases_seen"] = list(self.viewer_phases_seen)
+            d["viewer_densities_seen"] = list(self.viewer_densities_seen)
         return d
 
 
@@ -70,6 +77,19 @@ class Agent:
         last_receipt: Receipt | None = None
         final = "no steps"
         ok = False
+        phases_seen: list[str] = []
+        dens_seen: list[str] = []
+        frame_writes = 0
+        viewer_out: Path | None = None
+
+        if self.write_viewer:
+            from agentic_browser.viewer import default_viewer_path
+
+            viewer_out = self.viewer_path or default_viewer_path(self.receipts_dir)
+            # Fresh progressive log for this run (same path may be reused).
+            live_path = viewer_out.with_suffix(".live.jsonl")
+            if live_path.is_file():
+                live_path.unlink()
 
         for i in range(self.max_steps):
             step = self.planner.next_step(
@@ -80,9 +100,38 @@ class Agent:
             last_receipt = receipt
             if receipt.observation is not None:
                 obs = receipt.observation
-            if step.kind in ("done", "fail"):
+
+            terminal = step.kind in ("done", "fail")
+            if terminal:
                 ok = step.kind == "done" and receipt.ok
                 final = step.reason or receipt.detail
+
+            if self.write_viewer and viewer_out is not None:
+                from agentic_browser.viewer import write_viewer_progress
+
+                partial_ok = ok if terminal else False
+                partial = AgentResult(
+                    goal=goal,
+                    ok=partial_ok,
+                    final_reason=final if terminal else (receipt.detail or step.kind),
+                    receipts=list(receipts),
+                    steps_ok=sum(1 for r in receipts if r.ok),
+                    steps_failed=sum(1 for r in receipts if not r.ok),
+                    summary="",
+                )
+                # Mid-run frames stay non-terminal for chrome; final write settles.
+                fr = write_viewer_progress(
+                    partial,
+                    viewer_out,
+                    write_index=frame_writes,
+                    terminal=terminal,
+                    final_result=None,
+                )
+                frame_writes += 1
+                phases_seen.append(fr.phase)
+                dens_seen.append(fr.density)
+
+            if terminal:
                 break
         else:
             final = "exhausted steps"
@@ -103,14 +152,37 @@ class Agent:
             steps_ok=steps_ok,
             steps_failed=steps_failed,
             summary=summary,
+            viewer_frame_writes=frame_writes,
+            viewer_phases_seen=phases_seen,
+            viewer_densities_seen=dens_seen,
         )
         self._write_receipts(result)
-        if self.write_viewer:
-            from agentic_browser.viewer import default_viewer_path, write_viewer
+        if self.write_viewer and viewer_out is not None:
+            from agentic_browser.viewer import write_viewer, write_viewer_progress
 
-            path = self.viewer_path or default_viewer_path(self.receipts_dir)
-            out = write_viewer(result, path)
+            # Final adaptive snapshot + full frame JSON (end-of-run trust surface).
+            out = write_viewer(result, viewer_out, also_json=True)
+            # Append terminal progress line with settled frame (dedupe index).
+            write_viewer_progress(
+                result,
+                out,
+                write_index=frame_writes,
+                terminal=True,
+                final_result=result,
+                html=False,
+            )
             result.viewer_path = str(out)
+            result.viewer_frame_writes = frame_writes + 1
+            # Re-read settled phase/density onto the seen lists if missing.
+            from agentic_browser.viewer import build_frame
+
+            settled = build_frame(result)
+            if not phases_seen or phases_seen[-1] != settled.phase:
+                result.viewer_phases_seen = list(phases_seen) + [settled.phase]
+                result.viewer_densities_seen = list(dens_seen) + [settled.density]
+            else:
+                result.viewer_phases_seen = list(phases_seen)
+                result.viewer_densities_seen = list(dens_seen)
         return result
 
     def _act(self, step: Step) -> Receipt:

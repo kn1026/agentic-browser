@@ -39,7 +39,7 @@ observe → plan → act (click/type/navigate) → receipts — then **adapt the
 
 - M1 Playwright path green
 - M2: goal-token match, type/fill, fail-soft receipts, click/type→extract phase-advance, stricter name-token match (no role-only / bare click invent)
-- M2.5 start: adaptive HTML viewer — phase/density chrome from receipts (`--viewer`)
+- M2.5: adaptive HTML viewer — phase/density chrome from receipts (`--viewer`); live progressive rewrite after each step (`.live.jsonl` trail)
 
 ## Install (dev)
 
@@ -61,9 +61,10 @@ python -m agentic_browser "Open example.com and extract the main heading"
 python -m agentic_browser --live "Open example.com and extract the main heading"
 python -m agentic_browser --live --json "Open example.com and extract the main heading"
 
-# adaptive human-focus viewer (HTML snapshot; layout shifts with phase)
+# adaptive human-focus viewer (rewrites HTML each step; layout shifts with phase)
 python -m agentic_browser --viewer "Open example.com and extract the main heading"
 python -m agentic_browser --viewer --viewer-path /tmp/viewer.html "click More information then extract heading"
+# sidecar: viewer_*.live.jsonl (mid-run phase/density) + viewer_*.frame.json
 
 # demo
 python scripts/demo_example.py
@@ -76,7 +77,7 @@ python scripts/demo_example.py --live
 - `Planner` — goal + observation → one next step
 - `Agent` — observe/plan/act until done / max steps
 - `Receipts` — JSON step log under `receipts/`
-- `Viewer` — adaptive HTML chrome from `AgentResult` (phase · density · trust); not a static debug dump
+- `Viewer` — adaptive HTML chrome from receipts (phase · density · trust); progressive mid-run writes + end snapshot; not a static debug dump
 
 ## Why not wrap browser-use / Stagehand / agent-browser?
 
@@ -88,7 +89,8 @@ Those are great. This lab is building a different bet: **human-facing adaptive U
 - [x] M1 Playwright Chromium + `--live`
 - [x] M2 planner quality + receipts (match harden done; keep green)
 - [x] M2.5 slice: adaptive viewer v1 (`viewer.py`, `--viewer`, density/phase transform)
-- [ ] M2.5 polish: live progressive disclosure + stronger trust surfaces mid-run
+- [x] M2.5 live progressive: per-step HTML rewrite + `.live.jsonl` trail (H-UI-live-progressive-v1)
+- [ ] M2.5 polish: stronger trust surfaces + optional tiny local serve (no SPA)
 - [ ] M3 OSS polish + shareable adaptive demo
 
 ## License

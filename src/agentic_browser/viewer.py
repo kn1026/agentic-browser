@@ -503,14 +503,71 @@ def write_viewer(
     path.write_text(render_html(frame), encoding="utf-8")
     if also_json:
         meta = path.with_suffix(".frame.json")
+        live_path = path.with_suffix(".live.jsonl")
+        live_frames: list[dict[str, Any]] = []
+        if live_path.is_file():
+            for line in live_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    live_frames.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
         payload = {
             "frame": frame.to_dict(),
             "phases_replay": [f.to_dict() for f in frames_across_run(result)],
+            "live_progress": live_frames,
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "agent": "Zinley agent (zinley.com)",
         }
         meta.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return path
+
+
+def write_viewer_progress(
+    result: AgentResult,
+    path: str | Path,
+    *,
+    write_index: int,
+    terminal: bool = False,
+    final_result: AgentResult | None = None,
+    html: bool = True,
+) -> ViewerFrame:
+    """Rewrite adaptive HTML after a receipt so phase/density transforms live.
+
+    Also appends one JSON line to `<path>.live.jsonl` for mid-run evidence.
+    Keeps layout human-focus (same render_html) — not a debugger wall.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    source = final_result if (terminal and final_result is not None) else result
+    frame = build_frame(source)
+    if not terminal:
+        # Mid-run: never settle as done/fail unless a fail/done receipt just landed.
+        last_kind = frame.last_step_kind
+        if last_kind not in ("done", "fail"):
+            frame.ok = None
+            if frame.phase in ("done", "fail"):
+                # Prefer act/extract/navigate from last kind already handled in build_frame
+                pass
+    if html:
+        path.write_text(render_html(frame), encoding="utf-8")
+    live_path = path.with_suffix(".live.jsonl")
+    row = {
+        "i": write_index,
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "terminal": bool(terminal),
+        "phase": frame.phase,
+        "density": frame.density,
+        "confidence": frame.confidence,
+        "last_step_kind": frame.last_step_kind,
+        "ok": frame.ok,
+        "trust_line": frame.trust_line,
+    }
+    with live_path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    return frame
 
 
 def default_viewer_path(receipts_dir: str | Path | None = None) -> Path:

@@ -175,3 +175,77 @@ def test_agent_viewer_flag_writes_artifact(tmp_path: Path):
     assert "extract" in body.lower() or "done" in body.lower()
     assert 'data-density="' in body
     assert result.goal in body
+
+
+def test_live_progressive_viewer_writes_multi_phase(tmp_path: Path):
+    """H-UI-live-progressive-v1: mid-run HTML/jsonl updates with ≥2 phase or density values."""
+    out = tmp_path / "live_viewer.html"
+    agent = Agent(dry_run=True, write_viewer=True, viewer_path=out, receipts_dir=tmp_path)
+    try:
+        result = agent.run("click More information then extract heading")
+    finally:
+        agent.close()
+    assert result.ok
+    assert result.viewer_frame_writes >= 2
+    phases = set(result.viewer_phases_seen)
+    dens = set(result.viewer_densities_seen)
+    assert len(phases) >= 2 or len(dens) >= 2
+    live = out.with_suffix(".live.jsonl")
+    assert live.is_file()
+    rows = [ln for ln in live.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    assert len(rows) >= 2
+    import json
+
+    parsed = [json.loads(r) for r in rows]
+    live_phases = {r["phase"] for r in parsed}
+    live_dens = {r["density"] for r in parsed}
+    assert len(live_phases) >= 2 or len(live_dens) >= 2
+    # Final HTML is settled adaptive chrome, not empty
+    body = out.read_text(encoding="utf-8")
+    assert 'data-phase="' in body and 'data-density="' in body
+    assert "Zinley agent" in body
+    # frame.json includes live_progress trail
+    meta = out.with_suffix(".frame.json")
+    assert meta.is_file()
+    payload = json.loads(meta.read_text(encoding="utf-8"))
+    assert payload.get("live_progress")
+    assert len(payload["live_progress"]) >= 2
+
+
+def test_write_viewer_progress_rewrites_html(tmp_path: Path):
+    from agentic_browser.viewer import write_viewer_progress
+
+    path = tmp_path / "prog.html"
+    nav = AgentResult(
+        goal="open",
+        ok=False,
+        final_reason="",
+        receipts=[_receipt("goto")],
+        steps_ok=1,
+        steps_failed=0,
+    )
+    f1 = write_viewer_progress(nav, path, write_index=0, terminal=False)
+    assert f1.phase == "navigate"
+    assert path.is_file()
+    html1 = path.read_text(encoding="utf-8")
+    assert 'data-phase="navigate"' in html1 or "navigate" in html1
+
+    act = AgentResult(
+        goal="click More information",
+        ok=False,
+        final_reason="",
+        receipts=[
+            _receipt("goto"),
+            _receipt("click", target="More information..."),
+        ],
+        steps_ok=2,
+        steps_failed=0,
+    )
+    f2 = write_viewer_progress(act, path, write_index=1, terminal=False)
+    assert f2.phase == "act"
+    assert f2.density != f1.density or f2.phase != f1.phase
+    html2 = path.read_text(encoding="utf-8")
+    assert "act" in html2 or 'data-phase="act"' in html2
+    live = path.with_suffix(".live.jsonl")
+    assert live.is_file()
+    assert len(live.read_text(encoding="utf-8").strip().splitlines()) == 2
