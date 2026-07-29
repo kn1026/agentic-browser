@@ -1,4 +1,4 @@
-"""H-UI-adaptive-viewer-v1 — adaptive chrome transforms with phase/density."""
+"""H-UI-adaptive-viewer + live progressive + trust surface tests."""
 
 from pathlib import Path
 
@@ -9,10 +9,17 @@ from agentic_browser.viewer import (
     frames_across_run,
     render_html,
     write_viewer,
+    write_viewer_progress,
 )
 
 
-def _receipt(kind: str, ok: bool = True, detail: str = "", target: str = "") -> Receipt:
+def _receipt(
+    kind: str,
+    ok: bool = True,
+    detail: str = "",
+    target: str = "",
+    reason: str = "",
+) -> Receipt:
     obs = None
     if kind in ("goto", "click", "type", "extract_text"):
         obs = Observation(
@@ -32,8 +39,9 @@ def _receipt(kind: str, ok: bool = True, detail: str = "", target: str = "") -> 
             ),
             note="fake" if kind != "extract_text" else "extract: heading",
         )
+    step_reason = reason if reason else detail
     return Receipt(
-        step=Step(kind=kind, target=target, reason=detail),
+        step=Step(kind=kind, target=target, reason=step_reason),
         ok=ok,
         detail=detail or kind,
         observation=obs,
@@ -213,8 +221,6 @@ def test_live_progressive_viewer_writes_multi_phase(tmp_path: Path):
 
 
 def test_write_viewer_progress_rewrites_html(tmp_path: Path):
-    from agentic_browser.viewer import write_viewer_progress
-
     path = tmp_path / "prog.html"
     nav = AgentResult(
         goal="open",
@@ -229,6 +235,9 @@ def test_write_viewer_progress_rewrites_html(tmp_path: Path):
     assert path.is_file()
     html1 = path.read_text(encoding="utf-8")
     assert 'data-phase="navigate"' in html1 or "navigate" in html1
+    # Mid-run trust surface: meta refresh + structured action
+    assert 'http-equiv="refresh"' in html1
+    assert 'id="trust-panel"' in html1 or "trust-panel" in html1
 
     act = AgentResult(
         goal="click More information",
@@ -236,7 +245,12 @@ def test_write_viewer_progress_rewrites_html(tmp_path: Path):
         final_reason="",
         receipts=[
             _receipt("goto"),
-            _receipt("click", target="More information..."),
+            _receipt(
+                "click",
+                target="More information...",
+                reason="matched goal tokens",
+                detail="clicked More information...",
+            ),
         ],
         steps_ok=2,
         steps_failed=0,
@@ -244,8 +258,122 @@ def test_write_viewer_progress_rewrites_html(tmp_path: Path):
     f2 = write_viewer_progress(act, path, write_index=1, terminal=False)
     assert f2.phase == "act"
     assert f2.density != f1.density or f2.phase != f1.phase
+    assert f2.last_target.startswith("More information")
+    assert f2.auto_refresh_seconds > 0
     html2 = path.read_text(encoding="utf-8")
     assert "act" in html2 or 'data-phase="act"' in html2
+    assert "More information" in html2
+    assert "trust-panel" in html2
+    assert 'http-equiv="refresh"' in html2
     live = path.with_suffix(".live.jsonl")
     assert live.is_file()
     assert len(live.read_text(encoding="utf-8").strip().splitlines()) == 2
+
+
+def test_trust_surface_html_has_action_target_reason_and_chip():
+    """H-UI-trust-surface-v1: structured trust panel, not generic copy only."""
+    result = AgentResult(
+        goal="click More information then extract heading",
+        ok=True,
+        final_reason="extracted",
+        receipts=[
+            _receipt("goto", target="https://example.com", reason="open start url"),
+            _receipt(
+                "click",
+                target="More information...",
+                reason="name matched goal",
+                detail="clicked More information...",
+            ),
+            _receipt("extract_text", detail="Example Domain", reason="read heading"),
+            _receipt("done", detail="extracted", reason="extracted"),
+        ],
+        steps_ok=4,
+        steps_failed=0,
+        summary="ok",
+    )
+    # Mid-run act frame: target + reason + conf chip + refresh
+    mid = AgentResult(
+        goal=result.goal,
+        ok=False,
+        final_reason="",
+        receipts=result.receipts[:2],
+        steps_ok=2,
+        steps_failed=0,
+    )
+    f_mid = build_frame(mid)
+    assert f_mid.phase == "act"
+    assert f_mid.last_step_kind == "click"
+    assert "More information" in f_mid.last_target
+    assert f_mid.last_reason
+    assert f_mid.why_step
+    assert f_mid.last_ok is True
+    assert f_mid.auto_refresh_seconds > 0
+    html_mid = render_html(f_mid)
+    assert 'id="trust-panel"' in html_mid
+    assert 'id="last-kind"' in html_mid
+    assert "More information" in html_mid
+    assert 'id="last-target"' in html_mid
+    assert 'id="last-reason"' in html_mid or "name matched" in html_mid
+    assert 'id="conf-chip"' in html_mid or "trust " in html_mid
+    assert 'http-equiv="refresh"' in html_mid
+    assert "Zinley agent" in html_mid
+
+    # Terminal settle: no meta refresh; outcome visible; trust still structured
+    f_done = build_frame(result, auto_refresh_seconds=0)
+    assert f_done.phase == "done"
+    assert f_done.auto_refresh_seconds == 0
+    html_done = render_html(f_done)
+    assert 'http-equiv="refresh"' not in html_done
+    assert 'id="trust-panel"' in html_done
+    assert "trust " in html_done
+    assert f_done.confidence >= 0.5
+
+
+def test_trust_surface_fail_shows_status_and_reason():
+    result = AgentResult(
+        goal="click the missing button",
+        ok=False,
+        final_reason="no interactive target matched click goal",
+        receipts=[
+            _receipt("goto", target="https://example.com"),
+            _receipt(
+                "fail",
+                ok=False,
+                detail="no interactive target matched click goal",
+                reason="no interactive target matched click goal",
+            ),
+        ],
+        steps_ok=1,
+        steps_failed=1,
+    )
+    frame = build_frame(result, auto_refresh_seconds=0)
+    assert frame.phase == "fail"
+    assert frame.last_ok is False or frame.ok is False
+    assert frame.status_label == "fail"
+    html_out = render_html(frame)
+    assert "trust-panel" in html_out
+    assert "fail" in html_out
+    assert "no interactive target" in html_out or "Stopped" in html_out
+    assert 'http-equiv="refresh"' not in html_out
+
+
+def test_write_viewer_terminal_strips_refresh(tmp_path: Path):
+    result = AgentResult(
+        goal="extract heading",
+        ok=True,
+        final_reason="Example Domain",
+        receipts=[
+            _receipt("goto"),
+            _receipt("extract_text", detail="Example Domain"),
+            _receipt("done", detail="Example Domain"),
+        ],
+        steps_ok=3,
+        steps_failed=0,
+    )
+    path = write_viewer(result, tmp_path / "term.html")
+    body = path.read_text(encoding="utf-8")
+    assert 'http-equiv="refresh"' not in body
+    assert "trust-panel" in body
+    meta = (tmp_path / "term.frame.json").read_text(encoding="utf-8")
+    assert "why_step" in meta
+    assert "last_target" in meta

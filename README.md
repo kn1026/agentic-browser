@@ -39,7 +39,7 @@ observe → plan → act (click/type/navigate) → receipts — then **adapt the
 
 - M1 Playwright path green
 - M2: goal-token match, type/fill, fail-soft receipts, click/type→extract phase-advance, stricter name-token match (no role-only / bare click invent)
-- M2.5: adaptive HTML viewer — phase/density chrome from receipts (`--viewer`); live progressive rewrite after each step (`.live.jsonl` trail)
+- M2.5: adaptive HTML viewer — phase/density chrome from receipts (`--viewer`); live progressive rewrite after each step (`.live.jsonl` trail); trust panel (action/target/reason/confidence) + mid-run meta refresh
 
 ## Install (dev)
 
@@ -77,7 +77,7 @@ python scripts/demo_example.py --live
 - `Planner` — goal + observation → one next step
 - `Agent` — observe/plan/act until done / max steps
 - `Receipts` — JSON step log under `receipts/`
-- `Viewer` — adaptive HTML chrome from receipts (phase · density · trust); progressive mid-run writes + end snapshot; not a static debug dump
+- `Viewer` — adaptive HTML chrome from receipts (phase · density · structured trust panel); progressive mid-run writes + optional meta refresh + end snapshot; not a static debug dump
 
 ## Why not wrap browser-use / Stagehand / agent-browser?
 
@@ -90,7 +90,8 @@ Those are great. This lab is building a different bet: **human-facing adaptive U
 - [x] M2 planner quality + receipts (match harden done; keep green)
 - [x] M2.5 slice: adaptive viewer v1 (`viewer.py`, `--viewer`, density/phase transform)
 - [x] M2.5 live progressive: per-step HTML rewrite + `.live.jsonl` trail (H-UI-live-progressive-v1)
-- [ ] M2.5 polish: stronger trust surfaces + optional tiny local serve (no SPA)
+- [x] M2.5 trust surface: why-step panel + target/reason/status/confidence chip + mid-run meta refresh (H-UI-trust-surface-v1)
+- [ ] M2.5 polish: optional tiny local serve / shareable adaptive demo (no SPA)
 - [ ] M3 OSS polish + shareable adaptive demo
 
 ## License
