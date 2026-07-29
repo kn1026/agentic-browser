@@ -39,7 +39,7 @@ observe → plan → act (click/type/navigate) → receipts — then **adapt the
 
 - M1 Playwright path green
 - M2: goal-token match, type/fill, fail-soft receipts, click/type→extract phase-advance, stricter name-token match (no role-only / bare click invent)
-- M2.5: adaptive HTML viewer — phase/density chrome from receipts (`--viewer`); live progressive rewrite after each step (`.live.jsonl` trail); trust panel (action/target/reason/confidence) + mid-run meta refresh
+- M2.5: adaptive HTML viewer — phase/density chrome from receipts (`--viewer`); live progressive rewrite after each step (`.live.jsonl` trail); trust panel (action/target/reason/confidence) + mid-run meta refresh; tiny stdlib loopback serve (`serve-viewer` / `--serve-viewer`)
 
 ## Install (dev)
 
@@ -66,6 +66,12 @@ python -m agentic_browser --viewer "Open example.com and extract the main headin
 python -m agentic_browser --viewer --viewer-path /tmp/viewer.html "click More information then extract heading"
 # sidecar: viewer_*.live.jsonl (mid-run phase/density) + viewer_*.frame.json
 
+# shareable local demo — stdlib HTTP on 127.0.0.1 only (no SPA/Flask)
+python -m agentic_browser --viewer --serve-viewer "Open example.com and extract the main heading"
+python -m agentic_browser serve-viewer /tmp/viewer.html
+python scripts/serve_viewer.py receipts/   # newest viewer*.html
+# open http://127.0.0.1:8765/  (Ctrl+C stops)
+
 # demo
 python scripts/demo_example.py
 python scripts/demo_example.py --live
@@ -78,6 +84,7 @@ python scripts/demo_example.py --live
 - `Agent` — observe/plan/act until done / max steps
 - `Receipts` — JSON step log under `receipts/`
 - `Viewer` — adaptive HTML chrome from receipts (phase · density · structured trust panel); progressive mid-run writes + optional meta refresh + end snapshot; not a static debug dump
+- `serve` — tiny stdlib `ThreadingHTTPServer` for viewer HTML on loopback (`serve-viewer` / `--serve-viewer`); no SPA, no framework
 
 ## Why not wrap browser-use / Stagehand / agent-browser?
 
@@ -91,8 +98,8 @@ Those are great. This lab is building a different bet: **human-facing adaptive U
 - [x] M2.5 slice: adaptive viewer v1 (`viewer.py`, `--viewer`, density/phase transform)
 - [x] M2.5 live progressive: per-step HTML rewrite + `.live.jsonl` trail (H-UI-live-progressive-v1)
 - [x] M2.5 trust surface: why-step panel + target/reason/status/confidence chip + mid-run meta refresh (H-UI-trust-surface-v1)
-- [ ] M2.5 polish: optional tiny local serve / shareable adaptive demo (no SPA)
-- [ ] M3 OSS polish + shareable adaptive demo
+- [x] M2.5 static serve: stdlib loopback HTTP for viewer HTML (`serve-viewer`, H-UI-static-serve-v1)
+- [ ] M3 OSS polish + shareable adaptive demo tour
 
 ## License
 

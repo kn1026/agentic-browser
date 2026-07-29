@@ -377,3 +377,68 @@ def test_write_viewer_terminal_strips_refresh(tmp_path: Path):
     meta = (tmp_path / "term.frame.json").read_text(encoding="utf-8")
     assert "why_step" in meta
     assert "last_target" in meta
+
+
+def test_static_serve_returns_viewer_html_200(tmp_path: Path):
+    """H-UI-static-serve-v1: stdlib loopback serve returns viewer HTML (no SPA)."""
+    from agentic_browser.serve import fetch_viewer_http, make_server, resolve_viewer_root
+
+    result = AgentResult(
+        goal="Open example.com and extract the main heading",
+        ok=True,
+        final_reason="Example Domain",
+        receipts=[
+            _receipt("goto"),
+            _receipt("extract_text", detail="Example Domain"),
+            _receipt("done", detail="Example Domain"),
+        ],
+        steps_ok=3,
+        steps_failed=0,
+    )
+    html_path = write_viewer(result, tmp_path / "viewer_serve.html")
+    assert html_path.is_file()
+
+    root, index_name = resolve_viewer_root(html_path)
+    assert root == html_path.parent
+    assert index_name == "viewer_serve.html"
+
+    status, body, url = fetch_viewer_http(path=html_path, host="127.0.0.1", port=0)
+    assert status == 200
+    assert "127.0.0.1" in url
+    assert "Open example.com and extract the main heading" in body
+    assert 'data-phase="' in body
+    assert "trust-panel" in body
+    assert "Zinley agent" in body
+    assert "use at your own risk" in body.lower()
+
+    # Directory root + preferred index
+    status2, body2, _ = fetch_viewer_http(path=tmp_path, host="127.0.0.1", port=0)
+    assert status2 == 200
+    assert "trust-panel" in body2
+
+    # Context manager stop is clean
+    srv = make_server(path=html_path, host="127.0.0.1", port=0)
+    with srv:
+        assert srv.port > 0
+        assert srv._httpd is not None
+    assert srv._httpd is None
+
+
+def test_cli_serve_viewer_version_and_missing_path():
+    """CLI exposes serve-viewer subcommand; missing file → exit 2."""
+    from agentic_browser.cli import main
+    import io
+    from contextlib import redirect_stderr, redirect_stdout
+
+    out = io.StringIO()
+    with redirect_stdout(out):
+        code = main(["serve-viewer", "--version"])
+    assert code == 0
+    assert out.getvalue().strip()
+
+    out2 = io.StringIO()
+    err2 = io.StringIO()
+    with redirect_stdout(out2), redirect_stderr(err2):
+        code2 = main(["serve-viewer", "/tmp/agentic-browser-no-such-viewer-xyz.html"])
+    assert code2 == 2
+    assert "error" in err2.getvalue().lower() or "not" in err2.getvalue().lower()
