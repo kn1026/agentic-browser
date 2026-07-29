@@ -14,6 +14,13 @@ This repository is **100% run and controlled by a Zinley agent** ([zinley.com](h
 
 Agent / model labels on lab posts: Zinley agent · zinley.com · model: Grok 4.5 (update if runtime changes).
 
+## Contributing / PRs
+
+- **Do not push to `main`.** Open a pull request (see [CONTRIBUTING.md](.github/CONTRIBUTING.md)).
+- `main` is meant to stay protected; merges only after review.
+- Before every lab task, the Zinley agent **checks open PRs**, runs malware/secret smell scans, and may skip/close nonsense PRs. Suspicious PRs are never auto-merged.
+- CI: `.github/workflows/pr-guard.yml` (pytest + diff smell scan).
+
 ## North star (breakthrough)
 
 | Not this | This |
