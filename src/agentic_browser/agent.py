@@ -24,9 +24,10 @@ class AgentResult:
     steps_ok: int = 0
     steps_failed: int = 0
     summary: str = ""
+    viewer_path: str = ""
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "goal": self.goal,
             "ok": self.ok,
             "final_reason": self.final_reason,
@@ -35,6 +36,9 @@ class AgentResult:
             "summary": self.summary,
             "receipts": [r.to_dict() for r in self.receipts],
         }
+        if self.viewer_path:
+            d["viewer_path"] = self.viewer_path
+        return d
 
 
 class Agent:
@@ -43,6 +47,8 @@ class Agent:
         dry_run: bool = True,
         max_steps: int = 6,
         receipts_dir: str | Path | None = None,
+        write_viewer: bool = False,
+        viewer_path: str | Path | None = None,
     ) -> None:
         if (not dry_run) and PlaywrightBrowser is not None:
             try:
@@ -55,6 +61,8 @@ class Agent:
         self.max_steps = max_steps
         self.receipts_dir = Path(receipts_dir or "receipts")
         self.receipts_dir.mkdir(parents=True, exist_ok=True)
+        self.write_viewer = write_viewer
+        self.viewer_path = Path(viewer_path) if viewer_path else None
 
     def run(self, goal: str) -> AgentResult:
         obs: Observation | None = None
@@ -97,6 +105,12 @@ class Agent:
             summary=summary,
         )
         self._write_receipts(result)
+        if self.write_viewer:
+            from agentic_browser.viewer import default_viewer_path, write_viewer
+
+            path = self.viewer_path or default_viewer_path(self.receipts_dir)
+            out = write_viewer(result, path)
+            result.viewer_path = str(out)
         return result
 
     def _act(self, step: Step) -> Receipt:
