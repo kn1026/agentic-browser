@@ -35,11 +35,12 @@ observe → plan → act (click/type/navigate) → receipts — then **adapt the
 
 ## Status
 
-**M2 foundation landed** + **first adaptive viewer slice (H-UI-adaptive-viewer-v1)**. Product arc stays human-focus UI transform, not more automation wrappers.
+**M2 foundation + M2.5 adaptive viewer stack + M3 demo tour** landed. Product arc stays human-focus UI transform, not more automation wrappers.
 
 - M1 Playwright path green
 - M2: goal-token match, type/fill, fail-soft receipts, click/type→extract phase-advance, stricter name-token match (no role-only / bare click invent)
 - M2.5: adaptive HTML viewer — phase/density chrome from receipts (`--viewer`); live progressive rewrite after each step (`.live.jsonl` trail); trust panel (action/target/reason/confidence) + mid-run meta refresh; tiny stdlib loopback serve (`serve-viewer` / `--serve-viewer`)
+- M3: shareable adaptive **demo tour** — one command writes multi-frame index (calm→focus→dense→settle) + final viewer + serve one-liner (`demo-tour` / `scripts/demo_adaptive_ui.py`)
 
 ## Install (dev)
 
@@ -72,10 +73,30 @@ python -m agentic_browser serve-viewer /tmp/viewer.html
 python scripts/serve_viewer.py receipts/   # newest viewer*.html
 # open http://127.0.0.1:8765/  (Ctrl+C stops)
 
-# demo
+# M3 adaptive demo tour (multi-frame index + viewer + serve hint)
+python -m agentic_browser demo-tour
+python -m agentic_browser --demo-tour --demo-tour-dir /tmp/ab-tour
+python scripts/demo_adaptive_ui.py
+python scripts/demo_adaptive_ui.py --serve   # blocks on http://127.0.0.1:8765/
+# open the printed URL → tour index (beats + progressive peeks + full chrome frames)
+
+# bare loop demo (no tour UI)
 python scripts/demo_example.py
 python scripts/demo_example.py --live
 ```
+
+## M3 tour frames (what you should see)
+
+Static progressive disclosure — no SPA. Each frame is real adaptive chrome from receipts:
+
+| Beat | Phase | Layout density | Human surface |
+|------|--------|----------------|---------------|
+| 01 | navigate | calm | light open; chrome stays quiet |
+| 02 | act | focus | matched control + trust why |
+| 03 | extract | dense | real extract preview expands |
+| 04 | done | settle | quiet outcome; no meta-refresh thrash |
+
+Serve the tour directory: `python -m agentic_browser serve-viewer receipts/demo_tour_<ts>/` then open `/` for the index.
 
 ## Design
 
@@ -85,6 +106,7 @@ python scripts/demo_example.py --live
 - `Receipts` — JSON step log under `receipts/`
 - `Viewer` — adaptive HTML chrome from receipts (phase · density · structured trust panel); progressive mid-run writes + optional meta refresh + end snapshot; not a static debug dump
 - `serve` — tiny stdlib `ThreadingHTTPServer` for viewer HTML on loopback (`serve-viewer` / `--serve-viewer`); no SPA, no framework
+- `demo` — M3 multi-frame tour index + per-phase frame HTML + manifest (`demo-tour`)
 
 ## Why not wrap browser-use / Stagehand / agent-browser?
 
@@ -99,7 +121,8 @@ Those are great. This lab is building a different bet: **human-facing adaptive U
 - [x] M2.5 live progressive: per-step HTML rewrite + `.live.jsonl` trail (H-UI-live-progressive-v1)
 - [x] M2.5 trust surface: why-step panel + target/reason/status/confidence chip + mid-run meta refresh (H-UI-trust-surface-v1)
 - [x] M2.5 static serve: stdlib loopback HTTP for viewer HTML (`serve-viewer`, H-UI-static-serve-v1)
-- [ ] M3 OSS polish + shareable adaptive demo tour
+- [x] M3 shareable adaptive demo tour (`demo-tour`, multi-frame index, H-UI-m3-demo-tour-v1)
+- [ ] M3 OSS polish + optional public share host (still loopback-first)
 
 ## License
 

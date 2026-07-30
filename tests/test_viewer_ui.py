@@ -442,3 +442,114 @@ def test_cli_serve_viewer_version_and_missing_path():
         code2 = main(["serve-viewer", "/tmp/agentic-browser-no-such-viewer-xyz.html"])
     assert code2 == 2
     assert "error" in err2.getvalue().lower() or "not" in err2.getvalue().lower()
+
+
+def test_demo_tour_writes_index_frames_and_manifest(tmp_path: Path):
+    """H-UI-m3-demo-tour-v1: multi-frame tour index + ≥2 densities + no SPA."""
+    from agentic_browser.demo import run_demo_tour
+    import json
+
+    out = tmp_path / "tour"
+    tour = run_demo_tour(
+        "click More information then extract heading",
+        out_dir=out,
+        dry_run=True,
+        max_steps=8,
+        receipts_dir=tmp_path / "receipts",
+    )
+    assert tour.ok
+    assert tour.tour_index_path.is_file()
+    assert tour.viewer_path.is_file()
+    assert len(tour.frame_paths) >= 3
+    assert len(set(tour.densities)) >= 2
+    assert len(set(tour.phases)) >= 2
+
+    index = tour.tour_index_path.read_text(encoding="utf-8")
+    assert 'id="demo-tour"' in index or "demo-tour" in index
+    assert "Tour beats" in index or "tour beats" in index.lower()
+    assert "Zinley agent" in index
+    assert "use at your own risk" in index.lower()
+    assert "trust-panel" not in index or "phase" in index  # index is tour chrome
+    assert "react" not in index.lower()
+    assert "websocket" not in index.lower()
+
+    for fp in tour.frame_paths:
+        body = fp.read_text(encoding="utf-8")
+        assert 'data-phase="' in body
+        assert 'data-density="' in body
+        assert "trust-panel" in body or "Adaptive agentic UI" in body
+
+    man = json.loads((out / "tour.manifest.json").read_text(encoding="utf-8"))
+    assert man.get("hypothesis") == "H-UI-m3-demo-tour-v1"
+    assert len(man.get("frames") or []) >= 3
+    assert tour.serve_hint
+    assert "serve-viewer" in tour.serve_hint
+
+
+def test_demo_tour_serve_index_http_200(tmp_path: Path):
+    """Tour directory served on loopback returns index with multi-frame links."""
+    from agentic_browser.demo import run_demo_tour
+    from agentic_browser.serve import fetch_viewer_http
+
+    out = tmp_path / "tour_serve"
+    tour = run_demo_tour(
+        "click More information then extract heading",
+        out_dir=out,
+        dry_run=True,
+        receipts_dir=tmp_path / "rcpt",
+    )
+    assert tour.ok
+    status, body, url = fetch_viewer_http(path=out, host="127.0.0.1", port=0)
+    assert status == 200
+    assert "127.0.0.1" in url
+    assert "Adaptive" in body or "demo tour" in body.lower()
+    assert "frame_" in body or "Tour beats" in body
+    assert "Zinley agent" in body
+    # First frame also fetchable
+    frame_name = tour.frame_paths[0].name
+    st2, body2, _ = fetch_viewer_http(
+        path=out, host="127.0.0.1", port=0, request_path=f"/{frame_name}"
+    )
+    assert st2 == 200
+    assert 'data-phase="' in body2
+    assert "trust-panel" in body2
+
+
+def test_cli_demo_tour_subcommand(tmp_path: Path):
+    """CLI demo-tour subcommand + --demo-tour flag produce tour artifacts."""
+    from agentic_browser.cli import main
+    import io
+    from contextlib import redirect_stdout
+
+    out_dir = tmp_path / "cli_tour"
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        code = main(
+            [
+                "demo-tour",
+                "click More information then extract heading",
+                "--dir",
+                str(out_dir),
+            ]
+        )
+    text = buf.getvalue()
+    assert code == 0
+    assert out_dir.is_dir()
+    assert (out_dir / "index.html").is_file()
+    assert "tour" in text.lower() or "frames" in text.lower()
+    assert "Zinley" in text or "serve" in text.lower()
+
+    buf2 = io.StringIO()
+    out_dir2 = tmp_path / "flag_tour"
+    with redirect_stdout(buf2):
+        code2 = main(
+            [
+                "--demo-tour",
+                "--demo-tour-dir",
+                str(out_dir2),
+                "click More information then extract heading",
+            ]
+        )
+    assert code2 == 0
+    assert (out_dir2 / "index.html").is_file()
+    assert (out_dir2 / "tour.manifest.json").is_file()
